@@ -35,23 +35,28 @@ class ServerConfig:
     hf_local_dir: str | None = field(default_factory=lambda: _env_optional("HF_LOCAL_DIR"))
 
     # ── Engine ─────────────────────────────────────────────────────────
-    dtype: Literal["bfloat16", "float32"] = field(default_factory=lambda: _env("DTYPE", "float32"))
-    num_gpus: int = field(default_factory=lambda: _env_int("NUM_GPUS", -1))
+    dtype: Literal["bfloat16", "float32"] = field(default_factory=lambda: _env("DTYPE", "bfloat16"))
+    num_gpus: int = field(default_factory=lambda: _env_int("NUM_GPUS", 1))
     compile: bool = field(default_factory=lambda: _env_bool("COMPILE", True))
     cudagraph: bool = field(default_factory=lambda: _env_bool("CUDAGRAPH", True))
-    max_batch_size: int = field(default_factory=lambda: _env_int("MAX_BATCH_SIZE", 128))
-    max_seq_length: int = field(default_factory=lambda: _env_int("MAX_SEQ_LENGTH", 8192))
-    n_pages: int = field(default_factory=lambda: _env_int("N_PAGES", 1024))
-    page_size: int = field(default_factory=lambda: _env_int("PAGE_SIZE", 128))
-    prefill_length_limit: int = field(default_factory=lambda: _env_int("PREFILL_LENGTH_LIMIT", 16384))
+    max_batch_size: int = field(default_factory=lambda: _env_int("MAX_BATCH_SIZE", 2))
+    max_seq_length: int = field(default_factory=lambda: _env_int("MAX_SEQ_LENGTH", 2048))
+    n_pages: int = field(default_factory=lambda: _env_int("N_PAGES", 32))
+    page_size: int = field(default_factory=lambda: _env_int("PAGE_SIZE", 64))
+    prefill_length_limit: int = field(default_factory=lambda: _env_int("PREFILL_LENGTH_LIMIT", 512))
     max_decode_steps_between_prefills: int = field(default_factory=lambda: _env_int("MAX_DECODE_STEPS_BETWEEN_PREFILLS", 16))
     temperature: float = field(default_factory=lambda: _env_float("TEMPERATURE", 0.0))
     top_k: int | None = field(default_factory=lambda: _env_int("TOP_K", None) if os.environ.get("TOP_K") else None)
 
     # ── Image defaults ────────────────────────────────────────────────
     min_image_size: int = field(default_factory=lambda: _env_int("MIN_IMAGE_SIZE", 256))
-    max_image_size: int = field(default_factory=lambda: _env_int("MAX_IMAGE_SIZE", 1024))
-    max_tokens: int = field(default_factory=lambda: _env_int("MAX_TOKENS", 8192))
+    max_image_size: int = field(default_factory=lambda: _env_int("MAX_IMAGE_SIZE", 512))
+    max_tokens: int = field(default_factory=lambda: _env_int("MAX_TOKENS", 2048))
+
+    # HR (high-resolution) image feature cache (pinned CPU buffers)
+    # Disable by default on low-RAM machines; enable when you have ample host memory.
+    enable_hr_cache: bool = field(default_factory=lambda: _env_bool("ENABLE_HR_CACHE", False))
+    max_hr_cache_entries: int = field(default_factory=lambda: _env_int("MAX_HR_CACHE_ENTRIES", 4))
 
     # ── Layout detection ──────────────────────────────────────────────
     layout_threshold: float = field(default_factory=lambda: _env_float("LAYOUT_THRESHOLD", 0.3))

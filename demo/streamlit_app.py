@@ -26,10 +26,10 @@ def call_prediction_api(
     image: Image.Image,
     query: str,
     task: str = "segmentation",
-    max_tokens: int = 8192,
+    max_tokens: int = 2048,
     min_image_size: int = 256,
-    max_image_size: int = 1024,
-    upscale_factor: int = 16,
+    max_image_size: int = 512,
+    upscale_factor: int = 8,
 ) -> dict:
     """POST image + query to the inference server and return the JSON response."""
     # Resize client-side so masks are produced at capped resolution; avoids
@@ -246,7 +246,7 @@ def main():
             help="Minimum dimension the image is resized to before inference.",
         )
         max_img_size = st.number_input(
-            "Max image size (px)", min_value=64, max_value=2048, value=1024, step=32,
+            "Max image size (px)", min_value=64, max_value=2048, value=512, step=32,
             help="Maximum dimension the image is resized to before inference.",
         )
         if min_img_size > max_img_size:

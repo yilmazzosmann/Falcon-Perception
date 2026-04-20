@@ -1298,7 +1298,9 @@ class PagedInferenceEngine:
                 seq.original_image_size = (pil_img.height, pil_img.width)
             # Resize if necessary
             img = resize_image_if_necessary(pil_img, seq.min_image_size, seq.max_image_size)
-            seq.image_hash = int.from_bytes(hashlib.sha256(img.tobytes()).digest()[:8])
+            # Convert first 8 bytes of the SHA256 digest to an integer.
+            # int.from_bytes requires an explicit byteorder argument.
+            seq.image_hash = int.from_bytes(hashlib.sha256(img.tobytes()).digest()[:8], byteorder="big")
             images = [img]
         else:
             images = []
@@ -1315,8 +1317,16 @@ class PagedInferenceEngine:
             merge_size=1,
             max_length=self.max_seq_length,
         )
-        img_tensor = img_tensor_list[0]
-        pixel_mask_THW = np.ones(img_tensor.shape[:3], dtype=bool)
+
+        # tokenize_inputs may return an empty image list when no images were
+        # inserted (or were dropped due to max_length). Handle that case
+        # gracefully: leave image-related fields as None.
+        if img_tensor_list:
+            img_tensor = img_tensor_list[0]
+            pixel_mask_THW = np.ones(img_tensor.shape[:3], dtype=bool)
+        else:
+            img_tensor = None
+            pixel_mask_THW = None
         tpos_np, hw_np = get_pos_thw_single(
             input_ids_np, pixel_mask_THW, self.tokenizer,
             self.model.args.spatial_patch_size,

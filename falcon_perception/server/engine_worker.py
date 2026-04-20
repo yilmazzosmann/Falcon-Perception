@@ -206,7 +206,6 @@ def _build_engine(gpu_id, config, log):
 
     if is_ocr:
         from falcon_perception.paged_ocr_inference import OCRInferenceEngine
-
         engine = OCRInferenceEngine(
             model,
             tokenizer,
@@ -218,6 +217,9 @@ def _build_engine(gpu_id, config, log):
             prefill_length_limit=config.prefill_length_limit,
             capture_cudagraph=config.cudagraph,
             max_decode_steps_between_prefills=config.max_decode_steps_between_prefills,
+            enable_hr_cache=config.enable_hr_cache,
+            max_hr_cache_entries=config.max_hr_cache_entries,
+            max_image_size=config.max_image_size,
         )
     else:
         from falcon_perception.paged_inference import PagedInferenceEngine
@@ -232,6 +234,9 @@ def _build_engine(gpu_id, config, log):
             prefill_length_limit=config.prefill_length_limit,
             capture_cudagraph=config.cudagraph,
             max_decode_steps_between_prefills=config.max_decode_steps_between_prefills,
+            enable_hr_cache=config.enable_hr_cache,
+            max_hr_cache_entries=config.max_hr_cache_entries,
+            max_image_size=config.max_image_size,
         )
 
     engine.temperature = config.temperature
@@ -257,7 +262,7 @@ def _warmup_engine(engine, log):
     from falcon_perception.paged_inference import SamplingParams, Sequence
     from PIL import Image
 
-    dummy_img = Image.new("RGB", (1024, 1024), color=(128, 128, 128))
+    dummy_img = Image.new("RGB", (512, 512), color=(128, 128, 128))
     is_ocr = not engine.model.args.perception_heads
 
     if is_ocr:
@@ -273,7 +278,7 @@ def _warmup_engine(engine, log):
         text=prompt,
         image=dummy_img,
         min_image_size=256,
-        max_image_size=1024,
+        max_image_size=512,
         task=task,
     )
     sampling = SamplingParams(

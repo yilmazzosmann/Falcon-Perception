@@ -31,6 +31,59 @@ from falcon_perception.data import load_image, stream_samples_from_hf_dataset
 setup_torch_config()
 
 
+def mb(x: int) -> float:
+    """Return megabytes for a byte count."""
+    return float(x) / (1024 ** 2)
+
+
+def print_cuda_mem(tag: str, device: torch.device | None = None) -> None:
+    """Print allocated/reserved/peak GPU memory for `device`.
+
+    Safe to call when CUDA isn't available (prints a message instead).
+    """
+    if not torch.cuda.is_available():
+        print(f"[GPU MEM] {tag}: cuda not available")
+        return
+    device = device or torch.device("cuda")
+    try:
+        torch.cuda.synchronize(device)
+    except Exception:
+        pass
+    allocated = torch.cuda.memory_allocated(device)
+    reserved = torch.cuda.memory_reserved(device)
+    peak = torch.cuda.max_memory_allocated(device)
+    print(f"[GPU MEM] {tag}: allocated={mb(allocated):.1f}MB reserved={mb(reserved):.1f}MB peak={mb(peak):.1f}MB")
+
+
+def print_model_size(model: torch.nn.Module) -> None:
+    """Print approximate size of model parameters in MB."""
+    param_bytes = sum(p.numel() * p.element_size() for p in model.parameters())
+    print(f"[MODEL] params ~ {mb(param_bytes):.1f}MB")
+
+
+def peak_during(fn, *args, device: torch.device | None = None, **kwargs):
+    """Run `fn(*args, **kwargs)` and print peak GPU memory during the call.
+
+    Returns the function's return value.
+    """
+    device = device or (torch.device("cuda") if torch.cuda.is_available() else None)
+    if device is not None and torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+        try:
+            torch.cuda.synchronize(device)
+        except Exception:
+            pass
+    out = fn(*args, **kwargs)
+    if device is not None and torch.cuda.is_available():
+        try:
+            torch.cuda.synchronize(device)
+        except Exception:
+            pass
+        peak = torch.cuda.max_memory_allocated(device)
+        print(f"[GPU PEAK] peak during {getattr(fn, '__name__', str(fn))}: {mb(peak):.1f}MB")
+    return out
+
+
 @torch.inference_mode()
 def main(
     image: str | None = None,
@@ -40,12 +93,12 @@ def main(
     hf_revision: str = "main",
     hf_local_dir: str | None = None,
     device: str | None = None,
-    dtype: Literal["bfloat16", "float32", "float"] = "float32",
-    engine_type: Literal["batch", "paged"] = "paged",
-    flex_attn_safe: bool = False,
+    dtype: Literal["bfloat16", "float32", "float"] = "bfloat16",
+    engine_type: Literal["batch", "paged"] = "batch",
+    flex_attn_safe: bool = True,
     out_dir: str = "./outputs/",
-    compile: bool = True,
-    cudagraph: bool = True,
+    compile: bool = False,
+    cudagraph: bool = False,
 ):
     """Run Falcon Perception (detection/segmentation) on a single image.
 
@@ -64,6 +117,13 @@ def main(
         compile=compile,
     )
     resolved_device = model.device
+    # Report memory immediately after loading the model and show model param size
+    try:
+        print_cuda_mem("after load_and_prepare_model", resolved_device)
+        print_model_size(model)
+    except Exception:
+        # Don't fail if instrumentation hits an unexpected edge
+        pass
 
     if task == "segmentation" and not model_args.do_segmentation:
         print("Model does not support segmentation (do_segmentation=False), falling back to detection.")
@@ -110,15 +170,21 @@ def main(
 
         engine = PagedInferenceEngine(
             model, tokenizer, image_processor,
-            max_batch_size=2,
-            max_seq_length=8192,
+            max_batch_size=1,
+            max_seq_length=2048,
             n_pages=128,
             page_size=128,
-            prefill_length_limit=8192,
+            prefill_length_limit=2048,
             enable_hr_cache=False,
             capture_cudagraph=cudagraph,
             kernel_options=kernel_options or None,
         )
+
+        # Report memory after creating paged engine / KV cache
+        try:
+            print_cuda_mem("after paged engine init", resolved_device)
+        except Exception:
+            pass
 
         prompt = build_prompt_for_task(query, task)
         sampling_params = SamplingParams(stop_token_ids=stop_token_ids)
@@ -143,15 +209,27 @@ def main(
                 print_stats=False,
             )
         print(f"Warmup done in {warmup_timer.elapsed:.1f}s")
+        try:
+            print_cuda_mem("after warmup", resolved_device)
+        except Exception:
+            pass
 
         print("Running inference ...")
         sequences = _make_sequences()
+        try:
+            print_cuda_mem("before paged generate", resolved_device)
+        except Exception:
+            pass
         engine.generate(
             sequences,
             sampling_params=sampling_params,
             use_tqdm=True,
             print_stats=True,
         )
+        try:
+            print_cuda_mem("after paged generate", resolved_device)
+        except Exception:
+            pass
 
         seq = sequences[0]
         aux = seq.output_aux
@@ -178,24 +256,41 @@ def main(
 
         prompt = build_prompt_for_task(query, task)
         engine = BatchInferenceEngine(model, tokenizer, kernel_options=kernel_options or None)
+        try:
+            print_cuda_mem("after batch engine init", resolved_device)
+        except Exception:
+            pass
         batch_inputs = process_batch_and_generate(
             tokenizer,
             [(pil_image, prompt)],
-            max_length=4096,
+            max_length=2048,
             min_dimension=256,
-            max_dimension=1024,
+            max_dimension=512,
         )
+        try:
+            print_cuda_mem("after process_batch_and_generate (CPU)", None)
+        except Exception:
+            pass
         batch_inputs = {
             k: (v.to(resolved_device) if torch.is_tensor(v) else v)
             for k, v in batch_inputs.items()
         }
+        try:
+            print_cuda_mem("after moving batch_inputs to device", resolved_device)
+        except Exception:
+            pass
         _, aux_out = engine.generate(
             **batch_inputs,
-            max_new_tokens=2048,
+            max_new_tokens=512,
             temperature=0.0,
             stop_token_ids=stop_token_ids,
             seed=42,
         )
+        try:
+            print_cuda_mem("after batch generate", resolved_device)
+            print(f"  max during batch generate: {mb(torch.cuda.max_memory_allocated(resolved_device)):.1f}MB")
+        except Exception:
+            pass
 
         from falcon_perception.aux_output import AuxOutput
         from falcon_perception.visualization_utils import pair_bbox_entries
