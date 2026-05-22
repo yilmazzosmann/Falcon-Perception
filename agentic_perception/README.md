@@ -2,6 +2,10 @@
 
 A real-time agentic perception system built on top of [Falcon Perception](https://github.com/tiiuae/Falcon-Perception). An LLM orchestrator decides when to detect objects, zoom into them, and visually inspect them — all through natural conversation over a live camera feed.
 
+Watch the live demo below...
+
+[![Watch the Video](https://github.com/user-attachments/assets/e9dba130-5d80-445e-bad5-f3e1cbcbe060)](https://www.linkedin.com/posts/osman-yilmaz_agenticai-computervision-falconperception-ugcPost-7454211279725981697-v2Ra?utm_source=share&utm_medium=member_desktop&rcm=ACoAABdV_joB1usMmpYFNJOiL5Gvf9m9GSsvlmA)
+
 ## Features
 
 - **Tool-calling agent**: The LLM decides which tools to invoke (`detect_object`, `zoom_to_object`, `inspect_object`) based on conversation context
